@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>VocalEye.Desktop.App</RootNamespace>
+    <AssemblyName>VocalEye.Desktop.App</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VocalEye.Desktop.Core\VocalEye.Desktop.Core.csproj" />
+    <ProjectReference Include="..\VocalEye.Desktop.ApiClient\VocalEye.Desktop.ApiClient.csproj" />
+    <ProjectReference Include="..\VocalEye.Desktop.Hosting\VocalEye.Desktop.Hosting.csproj" />
+    <ProjectReference Include="..\VocalEye.Desktop.Infrastructure\VocalEye.Desktop.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
