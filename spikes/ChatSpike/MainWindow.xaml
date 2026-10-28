@@ -1,0 +1,12 @@
+<Window x:Class="ChatSpike.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Chat spike" Height="700" Width="900">
+  <DockPanel Margin="8">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+      <Button x:Name="StartButton" Content="Stream 2000 words" Padding="12,4" Click="OnStartClick" />
+      <TextBlock x:Name="StatsText" Margin="12,0,0,0" VerticalAlignment="Center" />
+    </StackPanel>
+    <FlowDocumentScrollViewer x:Name="Viewer" VerticalScrollBarVisibility="Auto" />
+  </DockPanel>
+</Window>

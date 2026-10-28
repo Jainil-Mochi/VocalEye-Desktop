@@ -1,37 +1,15 @@
-# VocalEye Desktop — Phase 0 starter
+# VocalEye Desktop — Phase 1
 
-This ZIP contains the initial Phase 0 WPF/.NET solution scaffold discussed in chat. It is a starter foundation, not the complete finished VocalEye application.
+Phase 1 includes a WPF desktop app, dependency injection, backend process launching (optional), health checking, optional Bearer token support, and optional `/api/info` display.
 
 ## Requirements
-- Windows
-- .NET 10 SDK
-- Visual Studio 2026 (or another editor supporting .NET 10 and WPF)
+- Visual Studio 2022 with .NET 10 SDK and the .NET desktop development workload.
+- Your separate VocalEye ASP.NET Core API project if you want the desktop app to launch the backend.
 
-## Open and run
-1. Extract the ZIP.
-2. Open `VocalEye.Desktop.sln` in Visual Studio.
-3. Allow NuGet restore to finish.
-4. Build the solution.
-5. Run `src/VocalEye.Desktop.App`.
+## Run
+1. Extract the ZIP and open `VocalEye.Desktop.sln`.
+2. Set `VocalEye.Desktop.App` as Startup Project.
+3. Edit `src/VocalEye.Desktop.App/appsettings.json`.
+4. Build and press F5.
 
-Or from PowerShell in this folder:
-
-```powershell
-dotnet restore
-dotnet build VocalEye.Desktop.sln
-dotnet test tests/VocalEye.Desktop.UnitTests/VocalEye.Desktop.UnitTests.csproj
-dotnet run --project src/VocalEye.Desktop.App/VocalEye.Desktop.App.csproj
-```
-
-## Projects
-- `VocalEye.Desktop.App`: WPF application and initial MVVM shell
-- `VocalEye.Desktop.Core`: domain/core project
-- `VocalEye.Desktop.ApiClient`: backend HTTP integration placeholder
-- `VocalEye.Desktop.Hosting`: hosting/process integration placeholder
-- `VocalEye.Desktop.Infrastructure`: infrastructure placeholder
-- `VocalEye.Desktop.UnitTests`: starter unit test project
-
-## Notes
-- The backend projects intentionally contain placeholders; backend API routes/contracts still need to be confirmed against your existing backend.
-- No secrets or backend credentials are included.
-- Future increments can be delivered as ZIP files containing only changed/new files. Extract those ZIPs into this solution folder and choose **Replace files** if prompted.
+Set `LaunchBackend` to true and `ProjectPath` to your API `.csproj` to let the app launch it. The backend must expose `/health`. `/api/info` is optional. Set `LaunchBackend` false to connect to a backend started separately.

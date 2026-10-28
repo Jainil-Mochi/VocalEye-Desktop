@@ -1,1 +1,1 @@
-Persistence, secure local settings, and platform infrastructure will be implemented in later phases.
+Phase 1 fills this project.

@@ -1,1 +1,1 @@
-Installer and packaging assets will be added during the packaging phase.
+Installer and update packaging arrive in Phase 7.

@@ -1,1 +1,1 @@
-Store the backend OpenAPI specification and contract notes here once confirmed from the existing backend.
+Put the backend's /openapi/v1.json here as openapi.json (run the backend in Development and download it).

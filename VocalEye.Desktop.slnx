@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VocalEye.Desktop.App/VocalEye.Desktop.App.csproj" />
+    <Project Path="src/VocalEye.Desktop.Core/VocalEye.Desktop.Core.csproj" />
+    <Project Path="src/VocalEye.Desktop.ApiClient/VocalEye.Desktop.ApiClient.csproj" />
+    <Project Path="src/VocalEye.Desktop.Hosting/VocalEye.Desktop.Hosting.csproj" />
+    <Project Path="src/VocalEye.Desktop.Infrastructure/VocalEye.Desktop.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VocalEye.Desktop.UnitTests/VocalEye.Desktop.UnitTests.csproj" />
+    <Project Path="tests/VocalEye.Desktop.UiTests/VocalEye.Desktop.UiTests.csproj" />
+  </Folder>
+</Solution>

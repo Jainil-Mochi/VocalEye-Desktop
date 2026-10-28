@@ -1,1 +1,1 @@
-Desktop/backend process hosting and lifecycle integration will be added in a later phase.
+Phase 1 fills this project.

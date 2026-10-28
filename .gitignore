@@ -1,11 +1,9 @@
-## Visual Studio / .NET
+bin/
+obj/
 .vs/
-**/bin/
-**/obj/
 *.user
 *.suo
-*.cache
 TestResults/
-artifacts/
 publish/
-.DS_Store
+artifacts/
+*.log
