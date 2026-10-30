@@ -20,7 +20,17 @@ public partial class App : Application
     services.Configure<BackendApiOptions>(ctx.Configuration.GetSection(BackendApiOptions.SectionName));
     services.Configure<BackendProcessOptions>(ctx.Configuration.GetSection(BackendProcessOptions.SectionName));
     services.AddHttpClient<IBackendConnection,BackendConnection>();
-    services.AddSingleton<BackendProcessManager>(); services.AddSingleton<MainViewModel>(); services.AddSingleton<MainWindow>();
+       services.AddTransient<AuthenticationHandler>(serviceProvider =>
+       {
+           var configuration = serviceProvider
+               .GetRequiredService<IConfiguration>();
+
+           var accessToken = configuration["Backend:AccessToken"];
+
+           return new AuthenticationHandler(accessToken);
+       });
+       services.AddChatFeature(new Uri(ctx.Configuration["Backend:BaseUrl"]!));
+       services.AddSingleton<BackendProcessManager>(); services.AddSingleton<MainViewModel>(); services.AddSingleton<MainWindow>();
    }).Build();
    await _host.StartAsync(); var window=_host.Services.GetRequiredService<MainWindow>(); MainWindow=window; window.Show();
   } catch(Exception ex) { MessageBox.Show($"VocalEye Desktop could not start.\n\n{ex.Message}","Startup error",MessageBoxButton.OK,MessageBoxImage.Error); Shutdown(-1); }
