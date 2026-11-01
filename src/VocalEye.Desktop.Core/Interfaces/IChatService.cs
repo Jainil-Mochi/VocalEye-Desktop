@@ -18,6 +18,9 @@ public interface IChatService
     /// </summary>
     Task<ChatCompletedDto> StreamMessageAsync(ChatRequestDto request, Action<string> onTextChunk, CancellationToken cancellationToken);
 
+    /// <summary>GET /api/conversations/{id}/pending-approvals: tool calls still waiting for the user (empty if none).</summary>
+    Task<IReadOnlyList<PendingApprovalDto>> GetPendingApprovalsAsync(Guid conversationId, CancellationToken cancellationToken);
+
     Task RenameConversationAsync(Guid conversationId, string title, CancellationToken cancellationToken);
 
     Task DeleteConversationAsync(Guid conversationId, CancellationToken cancellationToken);

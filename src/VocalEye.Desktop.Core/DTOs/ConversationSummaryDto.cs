@@ -9,8 +9,11 @@ public sealed class ConversationSummaryDto
 
     /// <summary>Null until backend slice B4 (titles) is implemented.</summary>
     public string? Title { get; init; }
+
+    /// <summary>The backend may send a string or a { provider, model } object; both are shown as text.</summary>
     [JsonConverter(typeof(FlexibleStringConverter))]
     public string? Model { get; init; }
+
     public DateTimeOffset UpdatedAt { get; init; }
     public int MessageCount { get; init; }
 }

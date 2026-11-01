@@ -9,8 +9,8 @@ using VocalEye.Desktop.Core.Interfaces;
 
 namespace VocalEye.Desktop.ApiClient;
 
-/// <summary>HTTP/SSE implementation of <see cref="IChatService"/>.</summary>
-public sealed class ChatService : IChatService
+/// <summary>HTTP/SSE implementation of <see cref="IChatService"/> and <see cref="IToolCatalogService"/>.</summary>
+public sealed class ChatService : IChatService, IToolCatalogService
 {
     internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -38,6 +38,13 @@ public sealed class ChatService : IChatService
         return await ReadListAsync<ConversationMessageDto>(response, "messages", cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<PendingApprovalDto>> GetPendingApprovalsAsync(Guid conversationId, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/conversations/{conversationId}/pending-approvals");
+        using var response = await SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false);
+        return await ReadListAsync<PendingApprovalDto>(response, "pendingApprovals", cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task RenameConversationAsync(Guid conversationId, string title, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/conversations/{conversationId}")
@@ -51,6 +58,15 @@ public sealed class ChatService : IChatService
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/conversations/{conversationId}");
         using var response = await SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+    }
+
+    // ---------- Tool catalog ----------
+
+    public async Task<IReadOnlyList<ToolDto>> GetToolsAsync(CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/tools");
+        using var response = await SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false);
+        return await ReadListAsync<ToolDto>(response, "tools", cancellationToken).ConfigureAwait(false);
     }
 
     // ---------- Streaming chat ----------

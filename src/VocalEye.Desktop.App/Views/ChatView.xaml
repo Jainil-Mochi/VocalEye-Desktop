@@ -239,13 +239,186 @@
                                                 BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1" HorizontalAlignment="Left">
                                             <StackPanel>
                                                 <ctl:MarkdownViewer Markdown="{Binding Text}" Foreground="{StaticResource TextPrimaryBrush}"
-                                                                    FontSize="14" AutomationProperties.Name="Assistant message"/>
+                                                                    FontSize="14" AutomationProperties.Name="Assistant message"
+                                                                    Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}"/>
+
+                                                <!-- Tool results -->
+                                                <ItemsControl ItemsSource="{Binding ToolResults}" Margin="0,6,0,0"
+                                                              AutomationProperties.Name="Tool results">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="{x:Type vm:ToolResultViewModel}">
+                                                            <Border Background="{StaticResource SidebarBrush}" CornerRadius="10" Padding="12,10" Margin="0,4"
+                                                                    BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1">
+                                                                <StackPanel>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock FontWeight="Bold" Margin="0,0,8,0" Text="✓" Foreground="#22C55E">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Success}" Value="False">
+                                                                                            <Setter Property="Text" Value="✕"/>
+                                                                                            <Setter Property="Foreground" Value="#F43F5E"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+                                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                        <TextBlock Text="{Binding StatusText}" Margin="8,0,0,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                    </StackPanel>
+
+                                                                    <!-- A failed tool shows its reason right away -->
+                                                                    <TextBlock Text="{Binding Output}" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="#FDA4AF">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Success}" Value="False">
+                                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+
+                                                                    <Expander Header="Details" Margin="0,6,0,0" Foreground="{StaticResource TextSecondaryBrush}"
+                                                                              Visibility="{Binding HasOutput, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                                                                 MaxHeight="200" VerticalScrollBarVisibility="Auto" BorderThickness="0"
+                                                                                 Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}"
+                                                                                 FontFamily="Cascadia Mono, Consolas" FontSize="12" Margin="0,4,0,0"
+                                                                                 AutomationProperties.Name="Tool output"/>
+                                                                    </Expander>
+
+                                                                    <ItemsControl ItemsSource="{Binding Artifacts}" Margin="0,6,0,0">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate DataType="{x:Type vm:ArtifactViewModel}">
+                                                                                <DockPanel Margin="0,3">
+                                                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                                                        <Button Content="{Binding OpenLabel}" Command="{Binding OpenCommand}"
+                                                                                                Style="{StaticResource AccentButton}" Padding="10,4" Margin="6,0,0,0"
+                                                                                                AutomationProperties.Name="Open result"/>
+                                                                                        <Button Content="Show in folder" Command="{Binding RevealCommand}"
+                                                                                                Style="{StaticResource GhostButton}" Padding="10,4" Margin="6,0,0,0"
+                                                                                                Visibility="{Binding CanReveal, Converter={StaticResource BoolToVis}}"
+                                                                                                AutomationProperties.Name="Show result in folder"/>
+                                                                                    </StackPanel>
+                                                                                    <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding Path}" VerticalAlignment="Center"
+                                                                                               TextTrimming="CharacterEllipsis" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                                </DockPanel>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <!-- Approval cards -->
+                                                <ItemsControl ItemsSource="{Binding Approvals}" Margin="0,6,0,0"
+                                                              AutomationProperties.Name="Tool approvals">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="{x:Type vm:ApprovalCardViewModel}">
+                                                            <Border Background="#1B2347" CornerRadius="12" Padding="14" Margin="0,6" MinWidth="420"
+                                                                    BorderBrush="#7C3AED" BorderThickness="1">
+                                                                <StackPanel>
+                                                                    <DockPanel>
+                                                                        <Border DockPanel.Dock="Right" CornerRadius="8" Padding="8,2" VerticalAlignment="Center">
+                                                                            <Border.Style>
+                                                                                <Style TargetType="Border">
+                                                                                    <Setter Property="Background" Value="#33F59E0B"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding RiskKey}" Value="Destructive">
+                                                                                            <Setter Property="Background" Value="#55F43F5E"/>
+                                                                                        </DataTrigger>
+                                                                                        <DataTrigger Binding="{Binding RiskKey}" Value="ReadOnly">
+                                                                                            <Setter Property="Background" Value="#333B82F6"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Border.Style>
+                                                                            <TextBlock Text="{Binding RiskLabel}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                        </Border>
+                                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15"
+                                                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                    </DockPanel>
+
+                                                                    <TextBlock Text="{Binding Summary.Headline}" TextWrapping="Wrap" Margin="0,8,0,8"
+                                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+
+                                                                    <ItemsControl ItemsSource="{Binding Summary.Fields}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Grid Margin="0,2">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="90"/>
+                                                                                        <ColumnDefinition Width="*"/>
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                                    <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"
+                                                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                                                </Grid>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+
+                                                                    <ItemsControl ItemsSource="{Binding Summary.Previews}" Margin="0,6,0,0">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Expander Header="{Binding Label}" IsExpanded="{Binding ExpandedByDefault, Mode=OneWay}"
+                                                                                          Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2">
+                                                                                    <StackPanel>
+                                                                                        <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                                                                                 MaxHeight="240" VerticalScrollBarVisibility="Auto"
+                                                                                                 Background="{StaticResource SidebarBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+                                                                                                 BorderBrush="{StaticResource BorderBrushSubtle}" Padding="8" Margin="0,4,0,0"
+                                                                                                 FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                                                                                 AutomationProperties.Name="Preview of what will be created or sent"/>
+                                                                                        <TextBlock Text="{Binding Caption}" FontSize="11" Margin="0,2,0,0"
+                                                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                                    </StackPanel>
+                                                                                </Expander>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+
+                                                                    <CheckBox Content="Show raw arguments" IsChecked="{Binding ShowRawArguments}" Margin="0,8,0,0"
+                                                                              Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                    <TextBox Text="{Binding RawArguments, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                                                             MaxHeight="200" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0" Padding="8"
+                                                                             Background="{StaticResource SidebarBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+                                                                             BorderBrush="{StaticResource BorderBrushSubtle}"
+                                                                             FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                                                             Visibility="{Binding ShowRawArguments, Converter={StaticResource BoolToVis}}"
+                                                                             AutomationProperties.Name="Raw tool arguments"/>
+
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0"
+                                                                                Visibility="{Binding IsPending, Converter={StaticResource BoolToVis}}">
+                                                                        <Button Content="Approve" Style="{StaticResource AccentButton}" Padding="18,7"
+                                                                                Command="{Binding DataContext.ApproveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                                CommandParameter="{Binding}" AutomationProperties.Name="Approve this action"/>
+                                                                        <Button Content="Deny" Style="{StaticResource GhostButton}" Padding="18,7" Margin="8,0,0,0"
+                                                                                Command="{Binding DataContext.DenyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                                CommandParameter="{Binding}" AutomationProperties.Name="Deny this action"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding StatusText}" FontSize="12" Margin="0,8,0,0"
+                                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
                                                 <TextBlock Text="{Binding ToolSummary}" FontSize="12" Margin="0,6,0,0"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            Visibility="{Binding ToolSummary, Converter={StaticResource NullToCollapsed}}"/>
                                                 <TextBlock Text="Responding…" FontSize="12" Margin="0,6,0,0" FontStyle="Italic"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBlock Text="{Binding ModelLabel}" FontSize="11" Margin="0,6,0,0"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Visibility="{Binding ModelLabel, Converter={StaticResource NullToCollapsed}}"/>
                                                 <TextBlock Text="Response stopped before it finished." FontSize="12" Margin="0,6,0,0"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            Visibility="{Binding IsIncomplete, Converter={StaticResource BoolToVis}}"/>
@@ -267,8 +440,18 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Composer -->
-            <Border Grid.Row="4" Margin="28,8,28,22" Padding="14,10" CornerRadius="16" MaxWidth="860"
+            <!-- Approvals banner + composer -->
+            <StackPanel Grid.Row="4" MaxWidth="860" Margin="28,0,28,0">
+            <Border Margin="0,6,0,0" Padding="14,8" CornerRadius="10" Background="#33F59E0B" BorderBrush="#F59E0B" BorderThickness="1"
+                    Visibility="{Binding HasPendingApprovals, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Deny all" Style="{StaticResource GhostButton}" Padding="12,4"
+                            Command="{Binding DenyAllCommand}" AutomationProperties.Name="Deny all waiting actions"/>
+                    <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource TextPrimaryBrush}"
+                               Text="{Binding PendingApprovalsText}"/>
+                </DockPanel>
+            </Border>
+            <Border Margin="0,8,0,22" Padding="14,10" CornerRadius="16"
                     Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -306,6 +489,7 @@
                             Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVis}}"/>
                 </Grid>
             </Border>
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>

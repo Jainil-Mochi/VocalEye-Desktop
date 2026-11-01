@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VocalEye.Desktop.App.Services;
+using VocalEye.Desktop.Core.Approvals;
 using VocalEye.Desktop.Core.DTOs;
 using VocalEye.Desktop.Core.Exceptions;
 using VocalEye.Desktop.Core.Interfaces;
@@ -14,25 +15,35 @@ public partial class ChatViewModel : ObservableObject
 {
     private readonly IChatService _chat;
     private readonly IDialogService _dialogs;
+    private readonly IToolCatalogService? _tools;
+    private readonly IShellLauncher? _launcher;
     private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+    private readonly Dictionary<string, ToolRisk> _toolRisks = new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationTokenSource? _sendCts;
     private CancellationTokenSource? _historyCts;
     private int _historyGeneration;
     private bool _suppressSelectionLoad;
-    private Guid _lastConversationId;
-    private string? _lastMessage;
+    private ChatRequestDto? _lastRequest;
+    private IReadOnlyList<ApprovalCardViewModel>? _lastApprovalCards;
 
-    public ChatViewModel(IChatService chat, IDialogService dialogs)
+    public ChatViewModel(IChatService chat, IDialogService dialogs,
+        IToolCatalogService? tools = null, IShellLauncher? launcher = null)
     {
         _chat = chat;
         _dialogs = dialogs;
+        _tools = tools;
+        _launcher = launcher;
         Messages.CollectionChanged += OnMessagesChanged;
         Conversations.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasConversations));
+        PendingApprovals.CollectionChanged += OnPendingApprovalsChanged;
     }
 
     public ObservableCollection<ConversationSummaryViewModel> Conversations { get; } = [];
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
+
+    /// <summary>Every tool call currently waiting for the user's decision (cards live inside their messages).</summary>
+    public ObservableCollection<ApprovalCardViewModel> PendingApprovals { get; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendMessageCommand))]
@@ -49,6 +60,9 @@ public partial class ChatViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SendMessageCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopResponseCommand))]
     [NotifyCanExecuteChangedFor(nameof(RetryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DenyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DenyAllCommand))]
     private bool _isStreaming;
 
     [ObservableProperty] private string? _errorMessage;
@@ -63,6 +77,20 @@ public partial class ChatViewModel : ObservableObject
 
     public bool HasConversations => Conversations.Count > 0;
     public bool ShowWelcome => Messages.Count == 0 && !IsBusy;
+    public bool HasPendingApprovals => PendingApprovals.Count > 0;
+
+    /// <summary>"2 tool actions are waiting for your decision (1 still to decide)".</summary>
+    public string PendingApprovalsText
+    {
+        get
+        {
+            var total = PendingApprovals.Count;
+            var undecided = PendingApprovals.Count(c => !c.IsDecided);
+            var noun = total == 1 ? "tool action is" : "tool actions are";
+            return total == 0 ? string.Empty
+                : $"{total} {noun} waiting for your decision" + (undecided < total ? $" — {undecided} left to decide" : string.Empty);
+        }
+    }
 
     /// <summary>Raised when the view should focus the composer.</summary>
     public event EventHandler? FocusComposerRequested;
@@ -71,10 +99,25 @@ public partial class ChatViewModel : ObservableObject
 
     // ───────────────────────── Initialization / list ─────────────────────────
 
-    public Task InitializeAsync() => LoadConversationsAsync(silent: false);
+    public async Task InitializeAsync()
+    {
+        await LoadConversationsAsync(silent: false);
+        await LoadToolCatalogAsync();
+    }
 
     [RelayCommand]
     private Task RefreshConversationsAsync() => LoadConversationsAsync(silent: false);
+
+    private async Task LoadToolCatalogAsync()
+    {
+        if (_tools is null) return;
+        try
+        {
+            foreach (var tool in await _tools.GetToolsAsync(CancellationToken.None))
+                _toolRisks[tool.Name] = ToolRiskExtensions.Parse(tool.Risk);
+        }
+        catch (ChatApiException) { /* risk badges fall back to built-in defaults */ }
+    }
 
     private async Task LoadConversationsAsync(bool silent)
     {
@@ -104,7 +147,10 @@ public partial class ChatViewModel : ObservableObject
             finally { _suppressSelectionLoad = false; }
 
             if (selectedId is not null && SelectedConversation is null)
+            {
                 Messages.Clear(); // the selected conversation no longer exists on the server
+                PendingApprovals.Clear();
+            }
         }
         catch (ChatApiException ex)
         {
@@ -126,12 +172,20 @@ public partial class ChatViewModel : ObservableObject
     private void NewChat()
     {
         CancelActiveOperations();
-        Messages.Clear();
+        ClearThread();
         ErrorMessage = null;
         CanRetry = false;
         DraftMessage = string.Empty;
         CreateAndSelectDraft();
         FocusComposerRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ClearThread()
+    {
+        Messages.Clear();
+        PendingApprovals.Clear();
+        _lastRequest = null;
+        _lastApprovalCards = null;
     }
 
     private ConversationSummaryViewModel CreateAndSelectDraft()
@@ -155,7 +209,7 @@ public partial class ChatViewModel : ObservableObject
         // Switching chats cancels an in-progress reply (documented UX policy) and any older history load.
         CancelActiveOperations();
         var generation = ++_historyGeneration;
-        Messages.Clear();
+        ClearThread();
         ErrorMessage = null;
         CanRetry = false;
 
@@ -173,10 +227,35 @@ public partial class ChatViewModel : ObservableObject
             var history = await _chat.GetMessagesAsync(conversation.Id, cts.Token);
             if (generation != _historyGeneration) return; // a newer selection superseded this request
 
-            foreach (var m in history)
+            for (var i = 0; i < history.Count; i++)
             {
-                if (string.IsNullOrWhiteSpace(m.Text) && m.ToolNames.Count == 0) continue;
-                Messages.Add(new ChatMessageViewModel(m.Role, m.Text, m.ToolNames));
+                var m = history[i];
+                var blank = string.IsNullOrWhiteSpace(m.Text);
+                if (blank && m.ToolResults.Count == 0 && m.ToolNames.Count == 0) continue;
+
+                // An assistant row that only says "Used tools: x" is redundant when the next row carries the real results.
+                if (blank && m.ToolResults.Count == 0 && i + 1 < history.Count && history[i + 1].ToolResults.Count > 0) continue;
+
+                var vm = new ChatMessageViewModel(m.Role, m.Text, m.ToolNames);
+                foreach (var result in m.ToolResults) vm.ToolResults.Add(CreateToolResult(result));
+                Messages.Add(vm);
+            }
+
+            // Resumable approvals (backend slice B6): tool calls still waiting for the user.
+            IReadOnlyList<PendingApprovalDto>? pending = null;
+            try { pending = await _chat.GetPendingApprovalsAsync(conversation.Id, cts.Token); }
+            catch (ChatApiException) { /* older backend, or nothing to resume */ }
+            if (generation != _historyGeneration) return;
+
+            if (pending is { Count: > 0 })
+            {
+                var host = Messages.Count > 0 && Messages[^1].IsAssistant ? Messages[^1] : null;
+                if (host is null)
+                {
+                    host = new ChatMessageViewModel("assistant", string.Empty);
+                    Messages.Add(host);
+                }
+                foreach (var p in pending) AddApprovalCard(host, p, conversation.Id);
             }
             ScrollToEndRequested?.Invoke(this, EventArgs.Empty);
         }
@@ -203,39 +282,41 @@ public partial class ChatViewModel : ObservableObject
 
     // ───────────────────────── Sending / streaming ─────────────────────────
 
-    private bool CanSend() => !IsStreaming && !string.IsNullOrWhiteSpace(DraftMessage);
+    private bool CanSend() => !IsStreaming && !HasPendingApprovals && !string.IsNullOrWhiteSpace(DraftMessage);
 
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendMessageAsync()
     {
         var text = DraftMessage?.Trim();
-        if (IsStreaming || string.IsNullOrWhiteSpace(text)) return;
+        if (IsStreaming || HasPendingApprovals || string.IsNullOrWhiteSpace(text)) return;
 
         var conversation = SelectedConversation ?? CreateAndSelectDraft();
         conversation.FallbackTitle ??= MakeTitle(text);
 
         DraftMessage = string.Empty;
         Messages.Add(new ChatMessageViewModel("user", text));
-        await RunTurnAsync(conversation.Id, text);
+        await RunTurnAsync(new ChatRequestDto { ConversationId = conversation.Id, Message = text });
     }
 
-    private bool CanRetryTurn() => CanRetry && !IsStreaming && _lastMessage is not null;
+    private bool CanRetryTurn() => CanRetry && !IsStreaming && _lastRequest is not null;
 
     [RelayCommand(CanExecute = nameof(CanRetryTurn))]
     private async Task RetryAsync()
     {
-        if (_lastMessage is null) return;
-        // The user's message is already shown; do not add it again.
-        await RunTurnAsync(_lastConversationId, _lastMessage);
+        if (_lastRequest is null) return;
+        // The user's message (or the approval decisions) are already shown; nothing is added twice.
+        await RunTurnAsync(_lastRequest, _lastApprovalCards);
     }
 
-    private async Task RunTurnAsync(Guid conversationId, string text)
+    /// <param name="approvalCards">Set when this request answers pending approvals.</param>
+    private async Task RunTurnAsync(ChatRequestDto request, IReadOnlyList<ApprovalCardViewModel>? approvalCards = null)
     {
         ErrorMessage = null;
         CanRetry = false;
-        _lastConversationId = conversationId;
-        _lastMessage = text;
+        _lastRequest = request;
+        _lastApprovalCards = approvalCards;
 
+        var conversationId = request.ConversationId ?? Guid.Empty;
         var assistant = new ChatMessageViewModel("assistant", string.Empty) { IsStreaming = true };
         Messages.Add(assistant);
         IsStreaming = true;
@@ -249,12 +330,12 @@ public partial class ChatViewModel : ObservableObject
         }));
 
         ChatCompletedDto? completed = null;
+        var cancelled = false;
         try
         {
-            var request = new ChatRequestDto { ConversationId = conversationId, Message = text };
             completed = await _chat.StreamMessageAsync(request, batcher.Append, cts.Token);
         }
-        catch (OperationCanceledException) { /* stopped by the user or by navigation */ }
+        catch (OperationCanceledException) { cancelled = true; /* stopped by the user or by navigation */ }
         catch (ChatApiException ex)
         {
             ErrorMessage = ChatErrorFormatter.Format(ex);
@@ -273,32 +354,82 @@ public partial class ChatViewModel : ObservableObject
             cts.Dispose();
         }
 
+        // Once the backend has seen the decisions (answered, or interrupted mid-run) the cards are closed.
+        // After a plain failure they stay open so Retry can send the same decisions again.
+        if (approvalCards is not null && (completed is not null || cancelled))
+        {
+            foreach (var card in approvalCards)
+            {
+                card.IsResolved = true;
+                PendingApprovals.Remove(card);
+            }
+            if (cancelled)
+            {
+                ErrorMessage = "Stopped. Tools you approved may already have run — check the results before asking again.";
+                CanRetry = false;
+            }
+        }
+
         if (completed is not null)
-            FinalizeCompleted(assistant, completed);
-        else if (string.IsNullOrEmpty(assistant.Text))
+            FinalizeCompleted(assistant, completed, conversationId);
+        else if (!assistant.HasContent)
             Messages.Remove(assistant);
-        else
+        else if (assistant.HasText)
             assistant.IsIncomplete = true; // keep the partial reply, flagged
 
         IsStreaming = false;
+        OnPropertyChanged(nameof(PendingApprovalsText));
         await LoadConversationsAsync(silent: true);
     }
 
-    private void FinalizeCompleted(ChatMessageViewModel assistant, ChatCompletedDto completed)
+    private void FinalizeCompleted(ChatMessageViewModel assistant, ChatCompletedDto completed, Guid requestConversationId)
     {
-        if (!string.IsNullOrEmpty(completed.Reply))
-        {
-            assistant.Text = completed.Reply; // authoritative final text
-        }
+        var conversationId = completed.ConversationId != Guid.Empty ? completed.ConversationId : requestConversationId;
 
-        if (string.IsNullOrWhiteSpace(assistant.Text))
+        if (!string.IsNullOrEmpty(completed.Reply))
+            assistant.Text = completed.Reply; // authoritative final text
+
+        if (completed.ModelUsed is { Model: { Length: > 0 } model })
+            assistant.ModelLabel = completed.ModelUsed.Provider is { Length: > 0 } p ? $"{p}/{model}" : model;
+
+        foreach (var call in completed.ToolCalls)
+            assistant.ToolResults.Add(CreateToolResult(call));
+
+        foreach (var pending in completed.PendingApprovals)
+            AddApprovalCard(assistant, pending, conversationId);
+
+        // A turn that only asks for approval, or only ran tools, legitimately has no text.
+        if (!assistant.HasContent)
         {
             Messages.Remove(assistant);
-            ErrorMessage = completed.PendingApprovals.Count > 0
-                ? "This reply needs your approval before it can continue. Approvals arrive in a later version of the app."
-                : "The assistant returned an empty reply.";
-            CanRetry = false;
+            var who = assistant.ModelLabel is { Length: > 0 } m ? $" ({m})" : string.Empty;
+            ErrorMessage = $"The model{who} returned nothing for this request. This can happen when a tool call is too large to finish, such as a whole website. Try Retry, a smaller request, or a different model.";
+            CanRetry = true; // nothing ran, so resending cannot repeat an action
         }
+
+        ScrollToEndRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private ToolResultViewModel CreateToolResult(ToolCallDto call) =>
+        new(call, _launcher, ReportArtifactError);
+
+    private void ReportArtifactError(string message)
+    {
+        ErrorMessage = message;
+        CanRetry = false;
+    }
+
+    private void AddApprovalCard(ChatMessageViewModel host, PendingApprovalDto pending, Guid conversationId)
+    {
+        var risk = _toolRisks.TryGetValue(pending.ToolName, out var known) ? known : ToolRisk.Unknown;
+        var card = new ApprovalCardViewModel(pending, conversationId, risk);
+        card.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ApprovalCardViewModel.Decision))
+                OnPropertyChanged(nameof(PendingApprovalsText));
+        };
+        host.Approvals.Add(card);
+        PendingApprovals.Add(card);
     }
 
     [RelayCommand(CanExecute = nameof(IsStreaming))]
@@ -309,6 +440,62 @@ public partial class ChatViewModel : ObservableObject
     {
         ErrorMessage = null;
         CanRetry = false;
+    }
+
+    // ───────────────────────── Approvals ─────────────────────────
+
+    private bool CanDecide(ApprovalCardViewModel? card) => !IsStreaming && card is { IsResolved: false };
+
+    [RelayCommand(CanExecute = nameof(CanDecide))]
+    private Task ApproveAsync(ApprovalCardViewModel? card) => DecideAsync(card, ApprovalDecision.Approved);
+
+    [RelayCommand(CanExecute = nameof(CanDecide))]
+    private Task DenyAsync(ApprovalCardViewModel? card) => DecideAsync(card, ApprovalDecision.Denied);
+
+    private bool CanDenyAll() => !IsStreaming && HasPendingApprovals;
+
+    /// <summary>Safe shortcut: deny everything that is waiting. There is deliberately no "approve all".</summary>
+    [RelayCommand(CanExecute = nameof(CanDenyAll))]
+    private async Task DenyAllAsync()
+    {
+        foreach (var card in PendingApprovals) card.Decision = ApprovalDecision.Denied;
+        await SubmitApprovalsAsync();
+    }
+
+    private async Task DecideAsync(ApprovalCardViewModel? card, ApprovalDecision decision)
+    {
+        if (card is null || card.IsResolved || IsStreaming) return;
+        card.Decision = decision;
+
+        // The backend wants every pending call answered together, so wait until the last one is decided.
+        if (PendingApprovals.Any(c => !c.IsDecided)) return;
+        await SubmitApprovalsAsync();
+    }
+
+    private async Task SubmitApprovalsAsync()
+    {
+        var cards = PendingApprovals.ToList();
+        if (cards.Count == 0 || cards.Any(c => !c.IsDecided) || IsStreaming) return;
+
+        var request = new ChatRequestDto
+        {
+            ConversationId = cards[0].ConversationId,
+            // Only approvalId + approved are sent; the arguments the user saw are never re-sent or edited.
+            Approvals = cards.Select(c => new ApprovalDecisionDto
+            {
+                ApprovalId = c.ApprovalId,
+                Approved = c.Decision == ApprovalDecision.Approved
+            }).ToList()
+        };
+        await RunTurnAsync(request, cards);
+    }
+
+    private void OnPendingApprovalsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasPendingApprovals));
+        OnPropertyChanged(nameof(PendingApprovalsText));
+        SendMessageCommand.NotifyCanExecuteChanged();
+        DenyAllCommand.NotifyCanExecuteChanged();
     }
 
     // ───────────────────────── Rename / delete ─────────────────────────
@@ -384,7 +571,7 @@ public partial class ChatViewModel : ObservableObject
 
         if (wasSelected)
         {
-            Messages.Clear();
+            ClearThread();
             ErrorMessage = null;
             SelectedConversation = Conversations.Count == 0
                 ? null
